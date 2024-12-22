@@ -1,13 +1,12 @@
 import cv2
 import numpy as np
-from queue import Queue
 
-from utilites import dist
+from utilites import dist, draw_landmarks_on_image
 
 from keras.models import load_model
 
 import mediapipe as mp
-from threading import Thread
+from multiprocessing import Process, Queue
 
 BaseOptions = mp.tasks.BaseOptions
 HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -25,43 +24,30 @@ class RecognitionResult:
         self,
         image: np.ndarray,
         gestures: list[str],
-        landmarks: np.ndarray,
-        detection
+        landmarks: np.ndarray
     ):
         self.image = image
         self.gestures = gestures
         self.landmarks = landmarks
-        self.detection = detection
         
 
 class GestureRecognizer:
     def __init__(
-        self, 
-        video: cv2.VideoCapture, 
+        self,
         queue: Queue,
         landmarker_path: str = 'mlmodels/hand_landmarker.task', 
         recognizer_path: str = "mlmodels/static.h5",
         running_mode: str = "VIDEO"
     ):
-        self.video = video
         self.queue = queue
         
-        if running_mode == "VIDEO":
-            running_mode = VisionRunningMode.VIDEO
-        else:
-            running_mode = VisionRunningMode.IMAGE
-
-        options = HandLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=landmarker_path),
-            num_hands=2,
-            running_mode=running_mode
-        )
+        self.running_mode = running_mode
         
-        self.landmarker = HandLandmarker.create_from_options(options)
-        self.recognizer = load_model(recognizer_path)
+        self.recognizer_path = recognizer_path
+        self.landmarker_path = landmarker_path
         
     def start_loop(self):
-        thread = Thread(target=self.loop, daemon=True)
+        thread = Process(target=self.loop, daemon=True)
         thread.start()
         
     def get_landmarks(self, detection_result):
@@ -77,7 +63,16 @@ class GestureRecognizer:
         return dist(landmarks[0, 4], landmarks[0, 8]) / dist(landmarks[0, 0], landmarks[0, 8]) <= 0.2
         
     def loop(self):
+        self.video = cv2.VideoCapture(0)
         timestamp = 0
+        options = HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=self.landmarker_path),
+            num_hands=2,
+            running_mode=getattr(VisionRunningMode, self.running_mode)
+        )
+        
+        self.landmarker = HandLandmarker.create_from_options(options)
+        self.recognizer = load_model(self.recognizer_path)
         while True:
             flag, img = self.video.read()
             
@@ -104,16 +99,14 @@ class GestureRecognizer:
                     ]
                 
                 self.queue.put(RecognitionResult(
-                    img,
+                    draw_landmarks_on_image(img, detection),
                     gestures,
-                    landmarks,
-                    detection
+                    landmarks
                 ))
             else:
                 self.queue.put(RecognitionResult(
                     img,
                     None, 
-                    None,
-                    detection
+                    None
                 ))
             

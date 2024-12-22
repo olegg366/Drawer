@@ -3,14 +3,20 @@ from tkinter.ttk import Progressbar
 from tkinter.ttk import Style
 from PIL import ImageTk, Image, ImageDraw
 from webcolors import name_to_rgb
-from queue import Queue
 from textwrap import wrap
 from skimage.transform import resize
 import cv2
 import numpy as np
+from multiprocessing import Queue
 
 imgh = 300
 imgw = 400
+
+canvas_w = 300
+canvas_h = 400
+
+root_w = 300
+root_h = 400
 
 class RoundedFrame(tk.Canvas):
     def __init__(self, 
@@ -160,26 +166,26 @@ def add_corners(im, rad):
 class App():
     def __init__(self):
         self.root = tk.Tk()
-        # self.root.attributes("-fullscreen", True)
+        self.root.attributes("-fullscreen", True)
 
         self.line_id = None
         self.line_points = []
         self.line_options = {'fill': 'black', 'width': 10}
 
         #конфигурируем панель управления
-        self.fr_ctrl = tk.Frame(width=self.root.winfo_width(), height=100)
-        self.fr_ctrl.pack(side='left', fill='y')
+        self.fr_ctrl = tk.Frame(self.root, bg="lightgrey")
+        self.fr_ctrl.pack(side='left', fill='y', expand=False)
 
         #область рисования
-        self.fr_draw = tk.Frame(width=100, height=200)
+        self.fr_draw = tk.Frame(self.root, bg="white")
         self.fr_draw.pack(fill='both', expand=True)
 
-        self.canvas = tk.Canvas(self.fr_draw, width=512, height=512)
+        self.canvas = tk.Canvas(self.fr_draw, bg="white")
         self.canvas.pack(fill='both', expand=True)
 
-        self.canvas.bind('<Button-1>', self.set_start)
-        self.canvas.bind('<B1-Motion>', self.draw_line)
-        self.canvas.bind('<ButtonRelease-1>', lambda x: self.end_line())
+        # self.canvas.bind('<Button-1>', self.set_start)
+        # self.canvas.bind('<B1-Motion>', self.draw_line)
+        # self.canvas.bind('<ButtonRelease-1>', lambda x: self.end_line())
 
         self.btfont = 'Jost 50 bold'
         self.bth = 150
@@ -192,15 +198,13 @@ class App():
         self.image_panel = tk.Label(self.canvas)
 
         self.points_image = ImageTk.PhotoImage(Image.fromarray(np.ones((imgh, imgw))))
-        self.points_image_panel = tk.Label(self.fr_ctrl, image=self.points_image)
+        self.points_image_panel = tk.Label(self.fr_ctrl, image=self.points_image, bg="lightgrey")
         self.points_image_panel.pack(side='top', fill='both', pady=self.pad)
         
         self.camera_image = None
         
         self.status_drawing = RoundedFrame(
-            master=self.fr_ctrl, 
-            width=self.btw, 
-            height=self.bth - 25, 
+            master=self.fr_ctrl,
             background='red', 
             bg='red'
         )
@@ -218,9 +222,7 @@ class App():
             background=self.btclr,
             foreground=self.bttextclr,
             btnpressclr=self.btpress,
-            font=self.btfont,
-            height=self.bth,
-            width=self.btw
+            font=self.btfont
         )
         self.bt_del.pack(fill='both', side='top', pady=self.pad)
 
@@ -234,10 +236,8 @@ class App():
             text='Толщина', 
             callback=self.setup_wd_popup, 
             relief='groove', 
-            height=self.bth, 
             btnpressclr=self.btpress,
             foreground=self.bttextclr,
-            width=self.btw, 
             background=self.btclr,
             font=self.btfont
         )
@@ -260,9 +260,7 @@ class App():
             foreground=self.bttextclr,
             callback=self.gen,
             text='Готово!', 
-            height=self.bth, 
             btnpressclr=self.btpress,
-            width=self.btw, 
             font="Jost 55 bold"
         )
         self.bt_gen.pack(side='top', fill='both', pady=self.pad)
@@ -345,13 +343,13 @@ class App():
     def print_instructions(self):
         text = ["- начать/закончить", "- перемещать курсор", "- рисовать", "- очистить все"]
         imgs_names = ["thumb_up.png", "point_up.png", "click.png", "open.png"]
-        self.instruction_frame = tk.Frame(self.canvas)
+        self.instruction_frame = tk.Frame(self.canvas, bg="lightgrey")
         self.instruction_frame.pack(fill='both', padx=100)
         self.signs = []
         for idx, sentence in enumerate(text):
-            label = tk.Label(self.instruction_frame, text=sentence, font="Jost 50")
+            label = tk.Label(self.instruction_frame, text=sentence, font="Jost 50", bg='white', fg='black')
             self.signs.append(ImageTk.PhotoImage(Image.open('images/' + imgs_names[idx])))
-            image = tk.Label(self.instruction_frame, image=self.signs[-1])
+            image = tk.Label(self.instruction_frame, image=self.signs[-1], bg='white')
             
             image.grid(row=idx, column=0)
             label.grid(row=idx, column=1, sticky='w')
@@ -360,6 +358,9 @@ class App():
         self.instruction_frame.pack_forget()
                 
     def change_status(self):
+        if self.now_clr == "red": self.now_clr = "green"
+        elif self.now_clr == "green": self.now_clr = "yellow"
+        elif self.now_clr == "yellow": self.now_clr = "red"
         self.status_drawing.change_color(self.now_clr)
                 
     def progressbar_step(self, amount):        
@@ -427,9 +428,10 @@ class App():
         self.fr_wd_set.place_forget()
 
     def update(self):
-        print(type(self.camera_image))
-        if self.camera_image is not None and isinstance(self.camera_image, np.ndarray):
-            image = Image.fromarray(self.camera_image.astype('uint8'))
+        global canvas_h, canvas_h
+        if not self.frames_queue.empty():
+            image = self.frames_queue.get().image
+            image = Image.fromarray(image.astype('uint8')).resize((320, 180))
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             image = add_corners(image, 35)
             self.points_image = ImageTk.PhotoImage(image)
@@ -444,15 +446,23 @@ class App():
             for action in self.actions:
                 action()
         
-        self.left_corner_x = self.canvas.winfo_rootx()
-        self.left_corner_y = self.canvas.winfo_rooty()
-        self.canvas_w = self.canvas.winfo_width()
-        self.canvas_h = self.canvas.winfo_height()
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
         
-        self.change_status()
+        root_w = self.root.winfo_width()
+        root_h = self.root.winfo_height()
+        
+        if not self.commands_queue.empty():
+            f, args = self.commands_queue.get()
+            print(f)
+            func = getattr(self, f)
+            if args is None: func()
+            else: func(*args)
         self.root.update()
                 
-    def mainloop(self):
+    def mainloop(self, frames_queue: Queue, commands_queue: Queue):
+        self.frames_queue = frames_queue
+        self.commands_queue = commands_queue
         while True:
             self.update()
                 
