@@ -1,0 +1,14 @@
+tensorflow
+mediapipe
+opencv-python
+googletrans==3.1.0a0
+speechrecognition
+pillow
+numpy
+matplotlib
+tkinter
+webcolors
+scikit-image
+scikit-learn
+pyautogui
+PyAudio
