@@ -7,7 +7,7 @@ from textwrap import wrap
 from skimage.transform import resize
 import cv2
 import numpy as np
-from multiprocessing import Queue
+from multiprocessing import Queue, Value
 
 imgh = 300
 imgw = 400
@@ -29,11 +29,13 @@ class RoundedFrame(tk.Canvas):
                  contour_color = '',
                  contour_width = 0,
                  *args, **kwargs):
-        super(RoundedFrame, self).__init__(master, *args, **kwargs)
+        super(RoundedFrame, self).__init__(master, highlightthickness=0, *args, **kwargs)
         self.config(bg=self.master["bg"])
         self.background = background
         self.foreground = foreground
         self.font = font
+        
+        self.outline = contour_color
     
         self.radius = radius        
         
@@ -98,7 +100,7 @@ class RoundedFrame(tk.Canvas):
         if event.height < text_bbox[3]-text_bbox[1]:  
             height = text_bbox[3]-text_bbox[1] + 30
         
-        self.round_rectangle(5, 5, width-5, height-5, radius, update=True)
+        self.round_rectangle(5, 5, width-5, height-5, radius, outline=self.outline, update=True)
 
         bbox = self.bbox(self.rect)
 
@@ -171,17 +173,13 @@ class App():
         self.line_id = None
         self.line_points = []
         self.line_options = {'fill': 'black', 'width': 10}
+        
+        self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
+        self.canvas.pack(fill='both', expand=True)
 
         #конфигурируем панель управления
-        self.fr_ctrl = tk.Frame(self.root, bg="lightgrey")
-        self.fr_ctrl.pack(side='left', fill='y', expand=False)
-
-        #область рисования
-        self.fr_draw = tk.Frame(self.root, bg="white")
-        self.fr_draw.pack(fill='both', expand=True)
-
-        self.canvas = tk.Canvas(self.fr_draw, bg="white")
-        self.canvas.pack(fill='both', expand=True)
+        self.fr_ctrl = tk.Frame(self.canvas, bg="lightgrey", highlightthickness=0)
+        self.fr_ctrl.pack(side='left', fill='y', expand=False)       
 
         # self.canvas.bind('<Button-1>', self.set_start)
         # self.canvas.bind('<B1-Motion>', self.draw_line)
@@ -428,7 +426,7 @@ class App():
         self.fr_wd_set.place_forget()
 
     def update(self):
-        global canvas_h, canvas_h
+        global canvas_h, canvas_h, root_w, root_h
         if not self.frames_queue.empty():
             image = self.frames_queue.get().image
             image = Image.fromarray(image.astype('uint8')).resize((320, 180))
@@ -446,24 +444,29 @@ class App():
             for action in self.actions:
                 action()
         
-        canvas_w = self.canvas.winfo_width()
-        canvas_h = self.canvas.winfo_height()
+        self.canvas_w.value = self.canvas.winfo_width()
+        self.canvas_h.value = self.canvas.winfo_height()
         
-        root_w = self.root.winfo_width()
-        root_h = self.root.winfo_height()
+        self.shiftx.value = self.root.winfo_x()
+        self.shifty.value = self.root.winfo_y()
         
         if not self.commands_queue.empty():
             f, args = self.commands_queue.get()
-            print(f)
             func = getattr(self, f)
             if args is None: func()
             else: func(*args)
         self.root.update()
                 
-    def mainloop(self, frames_queue: Queue, commands_queue: Queue):
+    def mainloop(self, frames_queue: Queue, commands_queue: Queue, canvas_w, canvas_h, shiftx, shifty):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
-        while True:
+        self.canvas_w = canvas_w
+        self.canvas_h = canvas_h
+        
+        self.shiftx = shiftx
+        self.shifty = shifty
+        self.running = True
+        while self.running:
             self.update()
                 
     def print_text(self, text):

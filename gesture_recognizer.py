@@ -47,8 +47,20 @@ class GestureRecognizer:
         self.landmarker_path = landmarker_path
         
     def start_loop(self):
-        thread = Process(target=self.loop, daemon=True)
-        thread.start()
+        self.terminate_flag = False
+        self.process = Process(target=self.loop, daemon=True)
+        self.process.start()
+    
+    def join(self):
+        self.process.join()
+    
+    def terminate(self):
+        self.terminate_flag = True
+        if self.process.is_alive():
+            self.process.join(timeout=1)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join()
         
     def get_landmarks(self, detection_result):
         hand_landmarks_list = detection_result.hand_landmarks
@@ -73,7 +85,7 @@ class GestureRecognizer:
         
         self.landmarker = HandLandmarker.create_from_options(options)
         self.recognizer = load_model(self.recognizer_path)
-        while True:
+        while not self.terminate_flag:
             flag, img = self.video.read()
             
             if not flag:
