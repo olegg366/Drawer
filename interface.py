@@ -12,12 +12,6 @@ from multiprocessing import Queue, Value
 imgh = 300
 imgw = 400
 
-canvas_w = 300
-canvas_h = 400
-
-root_w = 300
-root_h = 400
-
 class RoundedFrame(tk.Canvas):
     def __init__(self, 
                  master = None, 
@@ -141,6 +135,9 @@ class RoundedButton(RoundedFrame):
         super(RoundedButton, self).__init__(master, *args, **kwargs)
         self.btnpressclr = btnpressclr
         self.callback = callback
+        
+        self.addtag('button', 'withtag', self.rect)
+        self.addtag('button', 'withtag', self.text)
         self.tag_bind("button", "<ButtonPress>", self.border)
         self.tag_bind("button", "<ButtonRelease>", self.border)
         
@@ -288,13 +285,10 @@ class App():
         self.progressbar = Progressbar(self.fr_progressbar, style='text.Horizontal.TProgressbar', length=200, maximum=self.progressmax)
         self.lb_progressbar = tk.Label(self.fr_progressbar, text='Идет обработка, подождите...', font='Jost 16')
         
-        self.flag_recognition = 0
-        self.flag_answer = 0
-        
         self.bt_yes = RoundedButton(
             self.fr_status, 
             text="Да", 
-            callback=self.rec,
+            callback=self.change_flags_correct,
             font="Jost 30",
             background=self.btclr,
             foreground='white'
@@ -304,7 +298,7 @@ class App():
             self.fr_status, 
             text="Нет", 
             font="Jost 30",
-            callback=self.nrec, 
+            callback=self.change_flags_incorrect, 
             background=self.btclr,
             foreground='white'
         )
@@ -330,18 +324,18 @@ class App():
     def gen(self):
         self.flag_generate = 1
     
-    def rec(self):
-        self.flag_recognition = 1
-        self.flag_answer = 1
+    def change_flags_correct(self):
+        self.flag_recognition.value = 1
+        self.flag_answer.value = 1
     
-    def nrec(self):
-        self.flag_recognition = 0
-        self.flag_answer = 1
+    def change_flags_incorrect(self):
+        self.flag_recognition.value = 0
+        self.flag_answer.value = 1
         
     def print_instructions(self):
         text = ["- начать/закончить", "- перемещать курсор", "- рисовать", "- очистить все"]
         imgs_names = ["thumb_up.png", "point_up.png", "click.png", "open.png"]
-        self.instruction_frame = tk.Frame(self.canvas, bg="lightgrey")
+        self.instruction_frame = tk.Frame(self.canvas, bg="white")
         self.instruction_frame.pack(fill='both', padx=100)
         self.signs = []
         for idx, sentence in enumerate(text):
@@ -417,16 +411,11 @@ class App():
         self.draw = ImageDraw.Draw(self.image)
         self.actions.clear()
 
-    def set_color(self, x):
-        self.line_options['fill'] = self.clrs[x]
-        self.fr_clr_set.place_forget()
-
     def change_width(self, x):
         self.line_options['width'] = x
         self.fr_wd_set.place_forget()
 
     def update(self):
-        global canvas_h, canvas_h, root_w, root_h
         if not self.frames_queue.empty():
             image = self.frames_queue.get().image
             image = Image.fromarray(image.astype('uint8')).resize((320, 180))
@@ -457,14 +446,26 @@ class App():
             else: func(*args)
         self.root.update()
                 
-    def mainloop(self, frames_queue: Queue, commands_queue: Queue, canvas_w, canvas_h, shiftx, shifty):
+    def mainloop(
+        self, 
+        frames_queue: Queue, 
+        commands_queue: Queue, 
+        canvas_w, canvas_h, 
+        shiftx, shifty,
+        flag_recognition, flag_recognition_result
+    ):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
+        
         self.canvas_w = canvas_w
-        self.canvas_h = canvas_h
+        self.canvas_h = canvas_h        
         
         self.shiftx = shiftx
         self.shifty = shifty
+        
+        self.flag_recognition = flag_recognition
+        self.flag_answer = flag_recognition_result
+        
         self.running = True
         while self.running:
             self.update()

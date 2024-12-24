@@ -1,9 +1,7 @@
-import cv2
-
 import sys
 import signal
 import pyautogui as pg
-from time import time
+from time import time, sleep
 from multiprocessing import Process, Queue, Value
 
 from utilites import map_coords
@@ -19,9 +17,19 @@ pg.FAILSAFE = False
 
 
 class Commander:
-    def __init__(self, frames_queue: Queue, commands_queue: Queue, canvas_w, canvas_h, shiftx, shifty):
+    def __init__(
+        self, 
+        frames_queue: Queue, 
+        commands_queue: Queue, 
+        canvas_w, canvas_h, 
+        shiftx, shifty,
+        flag_recognition, flag_recognition_result
+    ):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
+        
+        self.flag_recognition = flag_recognition
+        self.flag_recognition_result = flag_recognition_result
         
         self.flag_drawing = False
         self.flag_end = False
@@ -42,12 +50,18 @@ class Commander:
     def listen(self):
         recognizer = sr.Recognizer()
         translator = Translator()
-        with sr.Microphone() as source:
-            recognizer.adjust_for_ambient_noise(source)
-            self.commands_queue.put(('print_text', ('Говорите...', )))
-            audio = recognizer.listen(source, phrase_time_limit=5)
-        text = recognizer.recognize_google(audio, language='ru-RU')
-        text_en = translator.translate(text, src='ru', dest='en').text
+        while not self.flag_recognition_result.value:
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source)
+                self.commands_queue.put(('print_text', ('Говорите...', )))
+                audio = recognizer.listen(source, phrase_time_limit=5)
+            text = recognizer.recognize_google(audio, language='ru-RU')
+            text_en = translator.translate(text, src='ru', dest='en').text
+            self.commands_queue.put(('print_text', (f'Вы сказали: {text}?', )))
+            self.commands_queue.put(('check_recognition', None))
+            while not self.flag_recognition.value:
+                sleep(1)
+                continue
         return text, text_en
         
     def draw(self, gestures: list, x: int, y: int, image_size: tuple):
@@ -110,7 +124,7 @@ class Commander:
                 text_ru, text_en = self.listen()
                 print(text_ru, text_en)
                 self.flag_end = False
-                self.commands_queue.put(('change_status', None))
+                
     
     def terminate(self):
         self.terminate_flag = True
@@ -135,12 +149,15 @@ if __name__ == '__main__':
     shiftx = Value('i', 0)
     shifty = Value('i', 0)
     
+    flag_recognition = Value('i', 0)
+    flag_recognition_result = Value('i', 0)
+    
     frames_queue = Queue(-1)
     commands_queue = Queue(-1)
     
     gesture_recognizer = GestureRecognizer(frames_queue)
     app = App()
-    com = Commander(frames_queue, commands_queue, canvas_w, canvas_h, shiftx, shifty)
+    com = Commander(frames_queue, commands_queue, canvas_w, canvas_h, shiftx, shifty, flag_recognition, flag_recognition_result)
 
     
     gesture_recognizer.start_loop()
@@ -161,7 +178,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, cleanup)
     
     try:
-        app.mainloop(frames_queue, commands_queue, canvas_w, canvas_h, shiftx, shifty)
+        app.mainloop(frames_queue, commands_queue, canvas_w, canvas_h, shiftx, shifty, flag_recognition, flag_recognition_result)
     except KeyboardInterrupt:
         cleanup(None, None)
     gesture_recognizer.join()
