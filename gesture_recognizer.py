@@ -16,7 +16,8 @@ VisionRunningMode = mp.tasks.vision.RunningMode
 classes_mapper = {
     0 : 'Open_Palm',
     1 : 'Pointing_Up',
-    2 : 'Thumb_Up'
+    2 : 'Thumb_Up',
+    3 : 'Thumb_Down'
 }
 
 class RecognitionResult:
@@ -36,7 +37,7 @@ class GestureRecognizer:
         self,
         queue: Queue,
         landmarker_path: str = 'mlmodels/hand_landmarker.task', 
-        recognizer_path: str = "mlmodels/static.h5",
+        recognizer_path: str = "mlmodels/static.keras",
         running_mode: str = "VIDEO"
     ):
         self.queue = queue
@@ -104,11 +105,12 @@ class GestureRecognizer:
                 if self.is_click(landmarks):
                     gestures = ['Click']                  
                 else:
-                    recognitions = self.recognizer.predict(landmarks[:, :, :2], verbose=False)
+                    recognitions = self.recognizer.predict(landmarks, verbose=False)
                     gestures = [
                         classes_mapper[recognition]
                         for recognition in np.argmax(recognitions, axis=-1)
                     ]
+                    print(gestures)
                 
                 self.queue.put(RecognitionResult(
                     draw_landmarks_on_image(img, detection),
