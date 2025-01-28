@@ -6,10 +6,16 @@ speechrecognition
 pillow
 numpy
 matplotlib
-tkinter
+tk
 webcolors
 scikit-image
 scikit-learn
 pyautogui
 PyAudio
 flask
+torch
+tomesd
+deepcache
+diffusers
+transformers
+accelerate
