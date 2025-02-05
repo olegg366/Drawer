@@ -383,6 +383,10 @@ class App():
         self.bt_no.configure(width=self.fr_ctrl.winfo_width() // 2 - 5, height=100)
         self.bt_yes.pack(side='left')
         self.bt_no.pack(side='left')
+    
+    def delete_questions(self):
+        self.bt_yes.pack_forget()
+        self.bt_no.pack_forget()
         
     def setup_progressbar(self):
         self.bt_yes.pack_forget()
@@ -433,6 +437,9 @@ class App():
         self.line_options['width'] = x
         print(x)
         self.fr_wd_set.place_forget()
+        
+    def return_image(self):
+        self.images_queue.put(self.image)
 
     def update(self):
         if not self.frames_queue.empty():
@@ -461,6 +468,7 @@ class App():
         if not self.commands_queue.empty():
             f, args = self.commands_queue.get()
             func = getattr(self, f)
+            # print(args)
             if args is None: func()
             else: func(*args)
         self.root.update()
@@ -469,12 +477,14 @@ class App():
         self, 
         frames_queue: Queue, 
         commands_queue: Queue, 
+        images_queue,
         canvas_w, canvas_h, 
         shiftx, shifty,
         flag_recognition, flag_recognition_result
     ):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
+        self.images_queue = images_queue
         
         self.canvas_w = canvas_w
         self.canvas_h = canvas_h        
@@ -496,10 +506,12 @@ class App():
         self.image_panel.pack_forget()
     
     def display(self, img: Image):
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        w -= self.fr_ctrl.winfo_width()
         if img.size[0] < img.size[1]:
-            img = img.resize((self.canvas.winfo_width(),  int(self.canvas.winfo_width() / img.size[0] * img.size[1])))
+            img = img.resize((w,  int(w / img.size[0] * img.size[1])))
         else: 
-            img = img.resize((int(self.canvas.winfo_height() / img.size[1] * img.size[0]), self.canvas.winfo_height()))
+            img = img.resize((int(h / img.size[1] * img.size[0]), h))
         self.display_img = ImageTk.PhotoImage(img)
         self.image_panel.configure(image=self.display_img)
-        self.image_panel.pack(side="bottom", fill="both", expand="yes")
+        self.image_panel.pack(side="right", fill="both", expand="yes")

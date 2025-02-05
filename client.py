@@ -4,6 +4,7 @@ import base64
 import io
 from imageio import imread
 import matplotlib.pyplot as plt
+from PIL import Image
 
 # Создаем массив NumPy
 image = imread('images/scribble.png')
@@ -21,14 +22,13 @@ response = requests.post(
     'https://qtf4vqzx-5000.euw.devtunnels.ms/generator',
     json={
         'image': array_base64,
-        'prompt': 'pineapple'
+        'prompt': 'monkey',
+        'negative_prompt': 'bad quaity, worst quality, bad anatomy'
     }
 )
-print(response)
 data = response.json()
 array_data = base64.b64decode(data['generated'])
         
 image = np.load(io.BytesIO(array_data), allow_pickle=True)
-
 plt.imshow(image)
 plt.show()
