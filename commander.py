@@ -1,4 +1,5 @@
 import sys
+import cv2
 import signal
 import numpy as np
 import pyautogui as pg
@@ -6,7 +7,7 @@ import pyautogui as pg
 from PIL import Image
 from time import time, sleep
 
-from multiprocessing import Process, Queue, Value
+from multiprocessing import Process, Queue, Value, set_start_method
 
 import matplotlib.pyplot as plt
 
@@ -15,6 +16,7 @@ from utilites import map_coords
 from gesture_recognizer import GestureRecognizer
 from generator import Generator
 from interface import App
+from string import punctuation
 
 import speech_recognition as sr
 from googletrans import Translator
@@ -23,27 +25,33 @@ from googletrans import Translator
 pg.FAILSAFE = False
 
 
+def remove_punctuation(s):
+    res = ''
+    for c in s.lower():
+        if c not in punctuation:
+            res += c
+    return res.replace(' ', '_')
+
+
 class Commander:
     def __init__(
         self, 
         frames_queue: Queue, 
         commands_queue: Queue, 
-        images_queue: Queue,
+        chat_queue: Queue,
         api_url: str,
         canvas_w, canvas_h, 
         shiftx, shifty,
-        flag_recognition, flag_recognition_result
+        flag_recognition, flag_recognition_result,
     ):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
-        self.images_queue = images_queue
+        self.chat_queue = chat_queue
         
         self.api_url = api_url
         
         self.flag_recognition = flag_recognition
         self.flag_recognition_result = flag_recognition_result
-        
-        self.reset_flags()
         
         self.canvas_w = canvas_w
         self.canvas_h = canvas_h
@@ -51,11 +59,15 @@ class Commander:
         self.shiftx = shiftx
         self.shifty = shifty
         
+        self.reset_flags()
+
+        
     def reset_flags(self):
         self.flag_recognition.value = 0
         self.flag_recognition_result.value = 0
         self.flag_drawing = False
         self.flag_end = False
+        self.flag_reset = True
         self.flag_drawing_line = False
         self.last_showed_end_time = -1
         self.gestures_in_row = {
@@ -64,7 +76,8 @@ class Commander:
             'drag': 0
         }
     
-    def move_while(self, cond: callable):
+    def move_while(self, cond: callable, check_gestures = False, delay = 3):
+        tm = time()
         while cond():
             if self.frames_queue.empty():
                 continue
@@ -77,23 +90,39 @@ class Commander:
             fx, fy = (recognition_results.landmarks[0, 8, :2] + recognition_results.landmarks[0, 4, :2]) / 2
             fx = recognition_results.image.shape[1] - fx * recognition_results.image.shape[1]
             fy *= recognition_results.image.shape[0]
+            if check_gestures and (('Thumb_Up' in recognition_results.gestures and time() - self.last_showed_end_time > delay) or ('Thumb_Down' in recognition_results.gestures and time() - self.last_showed_end_time > delay)):
+                self.last_showed_end_time = time()
+                return 'Thumb_Up' in recognition_results.gestures
             self.move(recognition_results.gestures, fx, fy, recognition_results.image.shape[:2])
+        return None
         
     def listen(self):
-        # recognizer = sr.Recognizer()
-        # translator = Translator()
+        recognizer = sr.Recognizer()
+        translator = Translator()
         while not self.flag_recognition_result.value:
-            # with sr.Microphone() as source:
-            #     recognizer.adjust_for_ambient_noise(source)
-            #     self.commands_queue.put(('print_text', ('Говорите...', )))
-            #     audio = recognizer.listen(source, phrase_time_limit=5)
-            # text = recognizer.recognize_google(audio, language='ru-RU')
-            # text_en = translator.translate(text, src='ru', dest='en').text
-            text = 'ананас'
-            text_en = 'pineapple'
+            self.flag_recognition_result.value = 0
+            self.flag_recognition.value = 0
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source)
+                self.commands_queue.put(('print_text', ('Говорите...', )))
+                audio = recognizer.listen(source, phrase_time_limit=5)
+            try:
+                self.commands_queue.put(('print_text', ('Идет распознавание...', )))
+                text = recognizer.recognize_google(audio, language='ru-RU')
+            except sr.exceptions.UnknownValueError as e:
+                self.commands_queue.put(('print_text', ('Распознавание не удалось. Попробуйте ещё раз.', )))
+                tm = time()
+                self.move_while(lambda: time() - tm <= 2)
+                continue
+            self.commands_queue.put(('print_text', ('Идет перевод...', )))
+            text_en = translator.translate(text, src='ru', dest='en').text
+            # text, text_en = 'ананас', 'pineapple'
+            print(text_en)
             self.commands_queue.put(('print_text', (f'Вы сказали: {text}?', )))
             self.commands_queue.put(('check_recognition', None))
-            self.move_while(lambda: not self.flag_recognition.value)
+            result = self.move_while(lambda: not self.flag_recognition.value, check_gestures=True)
+            if result is not None:
+                self.flag_recognition_result.value = int(result)
         return text, text_en
     
     def move(self, gestures, x, y, image_size):
@@ -135,7 +164,7 @@ class Commander:
         elif self.flag_drawing and gestures.count('Open_Palm') == 2:
             self.commands_queue.put(('delete', None))
         else:
-            if 'Thumb_Up' in gestures and time() - self.last_showed_end_time > 5: 
+            if 'Thumb_Up' in gestures and time() - self.last_showed_end_time > 3: 
                 if not self.flag_drawing:
                     self.flag_drawing = True
                     self.flag_drawing_line = False
@@ -149,8 +178,10 @@ class Commander:
                     self.flag_drawing = False
                     self.commands_queue.put(('change_status', None))
                     
-        
     def loop(self):
+        self.generation_queue = Queue()
+        self.generator = Generator(self.api_url, self.generation_queue)
+        
         while not self.terminate_flag:
             if self.frames_queue.empty():
                 continue
@@ -164,29 +195,43 @@ class Commander:
             fx *= recognition_results.image.shape[1]
             fy *= recognition_results.image.shape[0]
             self.draw(recognition_results.gestures, fx, fy, recognition_results.image.shape[:2])
-            
             if self.flag_end:
                 text_ru, text_en = self.listen()
-                self.commands_queue.put(('change_status', None))
                 self.commands_queue.put(('delete_questions', None))
                 self.generate(text_ru, text_en)
+                self.commands_queue.put(('change_status', None))
+                self.commands_queue.put(('print_text', (f'', )))
+                self.commands_queue.put(('reset_image', None))
                 self.reset_flags()
                 
     def generate(self, text_ru: str, text_en: str):
         self.commands_queue.put(('print_text', (f'Подождите, идёт генерация по запросу {text_ru}...', )))
         self.commands_queue.put(('return_image', None))
-        self.move_while(lambda: self.images_queue.empty())
-        image = np.array(self.images_queue.get())
+        self.move_while(lambda: self.chat_queue.empty())
+        image = np.array(self.chat_queue.get())
         
-        self.generation_queue = Queue()
-        generator = Generator(self.api_url, self.generation_queue)
-        generator.start_generation(image, text_en, '')
+        self.generator.start_generation(image, text_en)
         self.move_while(lambda: self.generation_queue.empty())
-        gen = Image.fromarray((self.generation_queue.get() * 255).astype('uint8'))
+        self.gen = self.generation_queue.get()
+
+        self.commands_queue.put(('display', (self.gen, )))
+        self.commands_queue.put(('print_text', (f'Выберите изображение', )))
+        self.move_while(lambda: self.chat_queue.empty())
+        image_idx = self.chat_queue.get()
+        image = self.gen[image_idx]
+        self.commands_queue.put(('display_one', (image, )))
+        self.commands_queue.put(('print_text', (f'Пожалуйста, выберите директорию для сохранения...', )))
+        self.commands_queue.put(('ask_directory', None))
+        self.move_while(lambda: self.chat_queue.empty())
+        dir = self.chat_queue.get()
         
-        self.commands_queue.put(('display', (gen, )))
-        self.commands_queue.put(('change_status', None))
-                
+        cv2.imwrite(
+            dir + '/' + remove_punctuation(text_en) + '.png', 
+            cv2.cvtColor((image * 255).astype('uint8'), cv2.COLOR_RGB2BGR)
+        )
+        
+        self.commands_queue.put(('print_text', (f'Победа! Ваше изображение сохранено в {dir}', )))
+        
     
     def terminate(self):
         self.terminate_flag = True
@@ -204,7 +249,7 @@ class Commander:
     def join(self):
         self.process.join()
         
-if __name__ == '__main__':
+if __name__ == '__main__':    
     canvas_w = Value('i', 0)
     canvas_h = Value('i', 0)
     
@@ -214,9 +259,12 @@ if __name__ == '__main__':
     flag_recognition = Value('i', 0)
     flag_recognition_result = Value('i', 0)
     
+    stop = Value('i', 0)
+    flag_start = Value('i', 0)
+    
     frames_queue = Queue(-1)
     commands_queue = Queue(-1)
-    images_queue = Queue(-1)
+    chat_queue = Queue(-1)
     
     api_url = 'https://qtf4vqzx-5000.euw.devtunnels.ms/generator'
     
@@ -225,7 +273,7 @@ if __name__ == '__main__':
     com = Commander(
         frames_queue, 
         commands_queue, 
-        images_queue,
+        chat_queue,
         api_url,
         canvas_w, canvas_h, 
         shiftx, shifty, 
@@ -255,7 +303,7 @@ if __name__ == '__main__':
         app.mainloop(
             frames_queue, 
             commands_queue, 
-            images_queue,
+            chat_queue,
             canvas_w, canvas_h, 
             shiftx, shifty, 
             flag_recognition, flag_recognition_result

@@ -30,5 +30,6 @@ data = response.json()
 array_data = base64.b64decode(data['generated'])
         
 image = np.load(io.BytesIO(array_data), allow_pickle=True)
-plt.imshow(image)
+
+plt.imshow(image[0])
 plt.show()

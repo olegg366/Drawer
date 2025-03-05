@@ -110,7 +110,6 @@ class GestureRecognizer:
                         classes_mapper[recognition]
                         for recognition in np.argmax(recognitions, axis=-1)
                     ]
-                    print(gestures)
                 
                 self.queue.put(RecognitionResult(
                     draw_landmarks_on_image(img, detection),
