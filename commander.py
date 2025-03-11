@@ -36,7 +36,7 @@ def remove_punctuation(s):
 class Commander:
     def __init__(
         self, 
-        frames_queue: Queue, 
+        recognitions_queue: Queue, 
         commands_queue: Queue, 
         chat_queue: Queue,
         api_url: str,
@@ -44,7 +44,7 @@ class Commander:
         shiftx, shifty,
         flag_recognition, flag_recognition_result,
     ):
-        self.frames_queue = frames_queue
+        self.recognitions_queue = recognitions_queue
         self.commands_queue = commands_queue
         self.chat_queue = chat_queue
         
@@ -79,21 +79,21 @@ class Commander:
     def move_while(self, cond: callable, check_gestures = False, delay = 3):
         tm = time()
         while cond():
-            if self.frames_queue.empty():
+            if self.recognitions_queue.empty():
                 continue
             
-            recognition_results = self.frames_queue.get()
+            recognition_results = self.recognitions_queue.get()
             
             if recognition_results.landmarks is None:
                 continue
             
             fx, fy = (recognition_results.landmarks[0, 8, :2] + recognition_results.landmarks[0, 4, :2]) / 2
-            fx = recognition_results.image.shape[1] - fx * recognition_results.image.shape[1]
-            fy *= recognition_results.image.shape[0]
+            fx = recognition_results.shape[1] - fx * recognition_results.shape[1]
+            fy *= recognition_results.shape[0]
             if check_gestures and (('Thumb_Up' in recognition_results.gestures and time() - self.last_showed_end_time > delay) or ('Thumb_Down' in recognition_results.gestures and time() - self.last_showed_end_time > delay)):
                 self.last_showed_end_time = time()
                 return 'Thumb_Up' in recognition_results.gestures
-            self.move(recognition_results.gestures, fx, fy, recognition_results.image.shape[:2])
+            self.move(recognition_results.gestures, fx, fy, recognition_results.shape[:2])
         return None
         
     def listen(self):
@@ -183,18 +183,18 @@ class Commander:
         self.generator = Generator(self.api_url, self.generation_queue)
         
         while not self.terminate_flag:
-            if self.frames_queue.empty():
+            if self.recognitions_queue.empty():
                 continue
             
-            recognition_results = self.frames_queue.get()
+            recognition_results = self.recognitions_queue.get()
             
             if recognition_results.landmarks is None:
                 continue
             
             fx, fy = (recognition_results.landmarks[0, 8, :2] + recognition_results.landmarks[0, 4, :2]) / 2
-            fx *= recognition_results.image.shape[1]
-            fy *= recognition_results.image.shape[0]
-            self.draw(recognition_results.gestures, fx, fy, recognition_results.image.shape[:2])
+            fx *= recognition_results.shape[1]
+            fy *= recognition_results.shape[0]
+            self.draw(recognition_results.gestures, fx, fy, recognition_results.shape[:2])
             if self.flag_end:
                 text_ru, text_en = self.listen()
                 self.commands_queue.put(('delete_questions', None))
@@ -262,16 +262,17 @@ if __name__ == '__main__':
     stop = Value('i', 0)
     flag_start = Value('i', 0)
     
+    recognitions_queue = Queue(-1)
     frames_queue = Queue(-1)
     commands_queue = Queue(-1)
     chat_queue = Queue(-1)
     
     api_url = 'https://qtf4vqzx-5000.euw.devtunnels.ms/generator'
     
-    gesture_recognizer = GestureRecognizer(frames_queue)
+    gesture_recognizer = GestureRecognizer(frames_queue, recognitions_queue)
     app = App()
     com = Commander(
-        frames_queue, 
+        recognitions_queue, 
         commands_queue, 
         chat_queue,
         api_url,
@@ -280,10 +281,6 @@ if __name__ == '__main__':
         flag_recognition, 
         flag_recognition_result
     )
-
-    
-    gesture_recognizer.start_loop()
-    com.start()
     
     def cleanup(signum, frame):
         print("Cleaning up resources...")
@@ -295,9 +292,14 @@ if __name__ == '__main__':
         frames_queue.join_thread()
         commands_queue.join_thread()
         sys.exit(0)
+        
+    app.set_closing_callback(lambda: cleanup(None, None))
     
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
+
+    gesture_recognizer.start_loop()
+    com.start()
     
     try:
         app.mainloop(
@@ -308,8 +310,8 @@ if __name__ == '__main__':
             shiftx, shifty, 
             flag_recognition, flag_recognition_result
         )
-    except KeyboardInterrupt:
-        cleanup(None, None)
+    except KeyboardInterrupt: pass
+    cleanup(None, None)
     gesture_recognizer.join()
     com.join()
         

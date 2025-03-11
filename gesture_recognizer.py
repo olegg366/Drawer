@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from time import sleep
 
 from utilites import dist, draw_landmarks_on_image
 
@@ -23,11 +24,11 @@ classes_mapper = {
 class RecognitionResult:
     def __init__(
         self,
-        image: np.ndarray,
+        shape: tuple[int],
         gestures: list[str],
         landmarks: np.ndarray
     ):
-        self.image = image
+        self.shape = shape
         self.gestures = gestures
         self.landmarks = landmarks
         
@@ -35,12 +36,14 @@ class RecognitionResult:
 class GestureRecognizer:
     def __init__(
         self,
-        queue: Queue,
+        frames_queue: Queue,
+        recognitions_queue: Queue,
         landmarker_path: str = 'mlmodels/hand_landmarker.task', 
         recognizer_path: str = "mlmodels/static.keras",
         running_mode: str = "VIDEO"
     ):
-        self.queue = queue
+        self.frames_queue = frames_queue
+        self.recognitions_queue = recognitions_queue
         
         self.running_mode = running_mode
         
@@ -73,7 +76,11 @@ class GestureRecognizer:
         return np.array(res, dtype='float32')
     
     def is_click(self, landmarks):
-        return dist(landmarks[0, 4], landmarks[0, 8]) / dist(landmarks[0, 0], landmarks[0, 8]) <= 0.2
+        for i in range(len(landmarks)):
+            is_clisk = dist(landmarks[i, 4], landmarks[i, 8]) / dist(landmarks[i, 0], landmarks[i, 8]) <= 0.2
+            if is_clisk:
+                return True
+        return False
         
     def loop(self):
         self.video = cv2.VideoCapture(0)
@@ -111,15 +118,18 @@ class GestureRecognizer:
                         for recognition in np.argmax(recognitions, axis=-1)
                     ]
                 
-                self.queue.put(RecognitionResult(
-                    draw_landmarks_on_image(img, detection),
+                self.recognitions_queue.put(RecognitionResult(
+                    img.shape,
                     gestures,
                     landmarks
                 ))
+                self.frames_queue.put(draw_landmarks_on_image(img, detection))
             else:
-                self.queue.put(RecognitionResult(
-                    img,
+                sleep(0.02)
+                self.recognitions_queue.put(RecognitionResult(
+                    img.shape,
                     None, 
                     None
                 ))
+                self.frames_queue.put(img)
             

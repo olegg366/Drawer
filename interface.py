@@ -160,6 +160,7 @@ class App():
         global imgw, imgh
         self.root = tk.Tk()
         self.root.attributes("-fullscreen", True)
+        self.root.title("MagicDraw")
 
         self.line_id = None
         self.line_points = []
@@ -172,9 +173,6 @@ class App():
         self.fr_ctrl = tk.Frame(self.canvas, bg="lightgrey", highlightthickness=0)
         self.fr_ctrl.place(relx=0, rely=0, relwidth=0.2, relheight=1)   
         self.root.update()  
-        
-        # imgw = int(imgw * self.root.winfo_width() / 1440)
-        # imgh = int(imgh * self.root.winfo_height() / 899)
         
         self.image_storage = tk.Frame(self.canvas, bg='white')
         self.image_panel = tk.Label(self.canvas, bg='white')
@@ -356,6 +354,13 @@ class App():
         else:
             self.line_options['fill'] = 'black'
             self.line_options['width'] = 10
+            
+    def set_closing_callback(self, callback):
+        def on_close():
+            callback()
+            self.root.destroy()
+        self.root.createcommand("tk::mac::Quit" , on_close)
+        self.root.protocol("WM_DELETE_WINDOW", on_close)
         
     def print_instructions(self):
         text = ["- начать/закончить", "- перемещать курсор", "- рисовать", "- очистить все"]
@@ -462,7 +467,7 @@ class App():
 
     def update(self):
         if not self.frames_queue.empty():
-            image = self.frames_queue.get().image
+            image = self.frames_queue.get()
             image = Image.fromarray(image.astype('uint8')).resize((320, image.shape[0] * 320 // image.shape[1]))
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             image = add_corners(image, 35)
