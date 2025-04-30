@@ -19,7 +19,7 @@ array_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
 # Отправляем массив на сервер
 response = requests.post(
-    'https://qtf4vqzx-5000.euw.devtunnels.ms/generator',
+    'https://tlzn6qzm-5000.euw.devtunnels.ms/generator',
     json={
         'image': array_base64,
         'prompt': 'monkey',
@@ -31,5 +31,5 @@ array_data = base64.b64decode(data['generated'])
         
 image = np.load(io.BytesIO(array_data), allow_pickle=True)
 
-plt.imshow(image[0])
+plt.imshow(image[1])
 plt.show()

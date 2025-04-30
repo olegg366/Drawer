@@ -77,7 +77,7 @@ class Commander:
         }
     
     def move_while(self, cond: callable, check_gestures = False, delay = 3):
-        tm = time()
+        self.last_showed_end_time = time()
         while cond():
             if self.recognitions_queue.empty():
                 continue
@@ -90,7 +90,11 @@ class Commander:
             fx, fy = (recognition_results.landmarks[0, 8, :2] + recognition_results.landmarks[0, 4, :2]) / 2
             fx = recognition_results.shape[1] - fx * recognition_results.shape[1]
             fy *= recognition_results.shape[0]
-            if check_gestures and (('Thumb_Up' in recognition_results.gestures and time() - self.last_showed_end_time > delay) or ('Thumb_Down' in recognition_results.gestures and time() - self.last_showed_end_time > delay)):
+            if check_gestures and (
+                ('Thumb_Up' in recognition_results.gestures and 
+                 time() - self.last_showed_end_time > delay) or 
+                ('Thumb_Down' in recognition_results.gestures and 
+                 time() - self.last_showed_end_time > delay)):
                 self.last_showed_end_time = time()
                 return 'Thumb_Up' in recognition_results.gestures
             self.move(recognition_results.gestures, fx, fy, recognition_results.shape[:2])
@@ -267,7 +271,7 @@ if __name__ == '__main__':
     commands_queue = Queue(-1)
     chat_queue = Queue(-1)
     
-    api_url = 'https://qtf4vqzx-5000.euw.devtunnels.ms/generator'
+    api_url = 'https://tlzn6qzm-5000.euw.devtunnels.ms/generator'
     
     gesture_recognizer = GestureRecognizer(frames_queue, recognitions_queue)
     app = App()

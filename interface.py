@@ -370,7 +370,9 @@ class App():
         self.signs = []
         for idx, sentence in enumerate(text):
             label = tk.Label(self.instruction_frame, text=sentence, font="Jost 50", bg='white', fg='black')
-            self.signs.append(ImageTk.PhotoImage(Image.open('images/' + imgs_names[idx])))
+            img_src = Image.open('images/' + imgs_names[idx])
+            new_size = (int(img_src.size[0] // 10 * 9), int(img_src.size[1] // 10 * 9))
+            self.signs.append(ImageTk.PhotoImage(img_src.resize(new_size)))
             image = tk.Label(self.instruction_frame, image=self.signs[-1], bg='white')
             
             image.grid(row=idx, column=0)

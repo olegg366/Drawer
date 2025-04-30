@@ -9,7 +9,7 @@ class Generator:
         self.url = url
         self.queue = queue
     
-    def generate(self, image: np.ndarray, prompt: str, negative_prompt: str = ''):
+    def generate(self, image: np.ndarray, prompt: str, negative_prompt: str = 'bad quality, worst quality, bad anatomy'):
         buffer = io.BytesIO()
         np.save(buffer, image)
         buffer.seek(0)
@@ -20,7 +20,7 @@ class Generator:
             self.url,
             json={
                 'image': array_base64,
-                'prompt': prompt,
+                'prompt': prompt + ', great quality, beautiful, high-detailed',
                 'negative_prompt': negative_prompt
             }
         )
