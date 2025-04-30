@@ -40,9 +40,9 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 def generate():
     data = request.json
     if 'prompt' not in data.keys():
-        return jsonify({'Error': 'Please provide prompt for model'}), 40
+        return jsonify({'Error': 'Please provide prompt for the model'}), 400
     if 'image' not in data.keys():
-        return jsonify({'Error': 'Please provide base image for model'}), 400
+        return jsonify({'Error': 'Please provide base image for the model'}), 400
     
     if 'negative_prompt' in data.keys():
         negative_prompt = data['negative_prompt']
@@ -58,7 +58,9 @@ def generate():
     img[img == 255] = 1
     
     with torch.inference_mode():
-        gen = pipe(prompt, [img], num_inference_steps=50, height=512, width=512, negative_prompt=negative_prompt, output_type='np').images[0]
+        gen = pipe(prompt, [img.astype('float')], num_inference_steps=50, height=512, width=512, negative_prompt=negative_prompt, num_images_per_prompt=3, output_type='np').images
+    gen = np.stack(gen)
+
     buffer = io.BytesIO()
     np.save(buffer, gen)
     buffer.seek(0)
@@ -66,4 +68,4 @@ def generate():
     return jsonify({'generated': array_base64}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
