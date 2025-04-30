@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter.filedialog import askdirectory
 import tkinter.font as tkfont
 from tkinter.ttk import Progressbar, Style
 from PIL import ImageTk, Image, ImageDraw
@@ -9,7 +10,7 @@ import cv2
 import numpy as np
 from multiprocessing import Queue, Value
 
-imgh = 180
+imgh = 240
 imgw = 320
 
 class RoundedFrame(tk.Canvas):
@@ -104,7 +105,7 @@ class RoundedFrame(tk.Canvas):
         
         bbox = self.bbox(self.text)
         w = bbox[2] - bbox[0]
-        if w > self.winfo_width():
+        if w > self.winfo_width() - 2:
             average_char_width = w / len(text)
             chars_per_line = int(self.winfo_width() / average_char_width)
             while w > self.winfo_width():  
@@ -159,6 +160,7 @@ class App():
         global imgw, imgh
         self.root = tk.Tk()
         self.root.attributes("-fullscreen", True)
+        self.root.title("MagicDraw")
 
         self.line_id = None
         self.line_points = []
@@ -172,8 +174,8 @@ class App():
         self.fr_ctrl.place(relx=0, rely=0, relwidth=0.2, relheight=1)   
         self.root.update()  
         
-        imgw = int(imgw * self.root.winfo_width() / 1440)
-        imgh = int(imgh * self.root.winfo_height() / 899)
+        self.image_storage = tk.Frame(self.canvas, bg='white')
+        self.image_panel = tk.Label(self.canvas, bg='white')
         
         self.fr_ctrl.columnconfigure(0, weight=0)
 
@@ -187,8 +189,6 @@ class App():
         self.btclr = '#6d2222'
         self.btpress = '#e77774'
         self.bttextclr = 'white'
-        
-        self.image_panel = tk.Label(self.canvas)
 
         self.points_image = ImageTk.PhotoImage(Image.fromarray(np.ones((imgh, imgw))))
         self.points_image_panel = tk.Label(self.fr_ctrl, image=self.points_image, bg="lightgrey")
@@ -263,8 +263,8 @@ class App():
             self.fr_ctrl,
             background=self.btclr,
             foreground=self.bttextclr,
-            callback=self.gen,
-            text='Готово!', 
+            callback=self.eraser,
+            text='Ластик', 
             height=self.bth,
             btnpressclr=self.btpress,
             font=self.btfont,
@@ -274,7 +274,7 @@ class App():
         self.bt_gen.pack(side='top', fill='x', pady=self.pad)
 
         #картинка, чтобы затем генерировать
-        self.image = Image.new("RGB", (512, 512), (255, 255, 255))
+        self.image = Image.new("RGB", (self.canvas.winfo_width(), self.canvas.winfo_height()), (255, 255, 255))
         self.draw = ImageDraw.Draw(self.image)
         
         #предыдущие высота и ширина canvas
@@ -347,6 +347,21 @@ class App():
         self.flag_recognition.value = 0
         self.flag_answer.value = 1
         
+    def eraser(self):
+        if self.line_options['fill'] == 'black':
+            self.line_options['fill'] = 'white'
+            self.line_options['width'] = 30
+        else:
+            self.line_options['fill'] = 'black'
+            self.line_options['width'] = 10
+            
+    def set_closing_callback(self, callback):
+        def on_close():
+            callback()
+            self.root.destroy()
+        self.root.createcommand("tk::mac::Quit" , on_close)
+        self.root.protocol("WM_DELETE_WINDOW", on_close)
+        
     def print_instructions(self):
         text = ["- начать/закончить", "- перемещать курсор", "- рисовать", "- очистить все"]
         imgs_names = ["thumb_up.png", "point_up.png", "click.png", "open.png"]
@@ -355,7 +370,9 @@ class App():
         self.signs = []
         for idx, sentence in enumerate(text):
             label = tk.Label(self.instruction_frame, text=sentence, font="Jost 50", bg='white', fg='black')
-            self.signs.append(ImageTk.PhotoImage(Image.open('images/' + imgs_names[idx])))
+            img_src = Image.open('images/' + imgs_names[idx])
+            new_size = (int(img_src.size[0] // 10 * 9), int(img_src.size[1] // 10 * 9))
+            self.signs.append(ImageTk.PhotoImage(img_src.resize(new_size)))
             image = tk.Label(self.instruction_frame, image=self.signs[-1], bg='white')
             
             image.grid(row=idx, column=0)
@@ -370,7 +387,7 @@ class App():
         elif self.now_clr == "yellow": self.now_clr = "red"
         self.status_drawing.change_color(self.now_clr)
                 
-    def progressbar_step(self, amount):        
+    def progressbar_step(self, amount=1):        
         self.progressval = (self.progressval + amount) % (self.progressmax + 1)
         if self.progressval == 0:
             self.progressval = 1
@@ -383,10 +400,17 @@ class App():
         self.bt_no.configure(width=self.fr_ctrl.winfo_width() // 2 - 5, height=100)
         self.bt_yes.pack(side='left')
         self.bt_no.pack(side='left')
+    
+    def delete_questions(self):
+        self.bt_yes.pack_forget()
+        self.bt_no.pack_forget()
         
     def setup_progressbar(self):
         self.bt_yes.pack_forget()
         self.bt_no.pack_forget()
+        
+        self.progressval = 0
+        self.style.configure('text.Horizontal.TProgressbar', text=f'{self.progressval}/{self.progressmax}')
         
         self.fr_progressbar.pack(anchor='s', fill='x', padx=15, pady=2)
         self.fr_progressbar.pack_propagate(False)
@@ -394,7 +418,9 @@ class App():
         self.progressbar.pack(fill='both')
         self.lb_progressbar.pack()
         self.lb_progressbar.pack()
-        
+
+    def remove_progressbar(self):
+        self.fr_progressbar.pack_forget()
         
     def set_start(self, cords):
         if isinstance(cords, tk.Event):
@@ -421,6 +447,10 @@ class App():
     def end_line(self):
         self.line_points.clear()
         self.line_id = None
+        
+    def ask_directory(self):
+        dir = askdirectory(initialdir='images/generated')
+        self.chat_queue.put(dir)
 
     def delete(self):
         self.end_line()
@@ -431,26 +461,20 @@ class App():
 
     def change_width(self, x):
         self.line_options['width'] = x
-        print(x)
         self.fr_wd_set.place_forget()
+        
+    def return_image(self):
+        self.chat_queue.put(self.image)
+        self.image.save('images/scribble.png')
 
     def update(self):
         if not self.frames_queue.empty():
-            image = self.frames_queue.get().image
-            image = Image.fromarray(image.astype('uint8')).resize((imgw, imgh))
+            image = self.frames_queue.get()
+            image = Image.fromarray(image.astype('uint8')).resize((320, image.shape[0] * 320 // image.shape[1]))
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             image = add_corners(image, 35)
             self.points_image = ImageTk.PhotoImage(image)
             self.points_image_panel.configure(image=self.points_image)
-        
-        h, w = self.canvas.winfo_height(), self.canvas.winfo_width()
-        if w != self.prevw or h != self.prevh:
-            self.image = self.image.resize((w, h))
-            self.draw = ImageDraw.Draw(self.image)
-            self.prevh = h
-            self.prevw = w
-            for action in self.actions:
-                action()
         
         self.canvas_w.value = self.canvas.winfo_width()
         self.canvas_h.value = self.canvas.winfo_height()
@@ -458,9 +482,10 @@ class App():
         self.shiftx.value = self.root.winfo_x()
         self.shifty.value = self.root.winfo_y()
         
-        if not self.commands_queue.empty():
+        while not self.commands_queue.empty():
             f, args = self.commands_queue.get()
             func = getattr(self, f)
+            # print(args)
             if args is None: func()
             else: func(*args)
         self.root.update()
@@ -469,12 +494,14 @@ class App():
         self, 
         frames_queue: Queue, 
         commands_queue: Queue, 
+        chat_queue,
         canvas_w, canvas_h, 
         shiftx, shifty,
         flag_recognition, flag_recognition_result
     ):
         self.frames_queue = frames_queue
         self.commands_queue = commands_queue
+        self.chat_queue = chat_queue
         
         self.canvas_w = canvas_w
         self.canvas_h = canvas_h        
@@ -495,11 +522,99 @@ class App():
     def remove_img(self):
         self.image_panel.pack_forget()
     
-    def display(self, img: Image):
+    def select_image(self, k):
+        self.chat_queue.put(k)
+        
+    def reset_image(self):
+        self.image = Image.new("RGB", (self.canvas.winfo_width(), self.canvas.winfo_height()), (255, 255, 255))
+        self.draw = ImageDraw.Draw(self.image)
+        self.canvas.delete('all')
+            
+    def display_one(self, img):
+        self.image_storage.pack_forget()
+        img = Image.fromarray((img * 255).astype('uint8'))
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        w -= self.fr_ctrl.winfo_width()
         if img.size[0] < img.size[1]:
-            img = img.resize((self.canvas.winfo_width(),  int(self.canvas.winfo_width() / img.size[0] * img.size[1])))
+            img = img.resize((w,  int(w / img.size[1] * img.size[0])))
         else: 
-            img = img.resize((int(self.canvas.winfo_height() / img.size[1] * img.size[0]), self.canvas.winfo_height()))
+            img = img.resize((int(h / img.size[0] * img.size[1]), h))
         self.display_img = ImageTk.PhotoImage(img)
-        self.image_panel.configure(image=self.display_img)
-        self.image_panel.pack(side="bottom", fill="both", expand="yes")
+        self.image_panel = tk.Label(
+            self.canvas, 
+            image=self.display_img, 
+            bg='white', 
+        )
+        self.image_panel.pack(side='top', padx=[self.fr_ctrl.winfo_width(), 0])
+    
+    def display_two(self, images):
+        self.image_panel.pack_forget()
+        
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        w = int(w / 2)
+        # h = int(h / 2)
+        w -= self.fr_ctrl.winfo_width()
+        
+        self.display_imgs = []
+        self.image_panels = []
+        
+        for i, img in enumerate(images):
+            img = Image.fromarray((img * 255).astype('uint8'))
+            img = img.resize((w,  int(w / img.size[1] * img.size[0])))
+            self.display_imgs.append(ImageTk.PhotoImage(img))
+            self.image_panels.append(tk.Label(
+                self.image_storage, 
+                image=self.display_imgs[i], 
+                bg='white', 
+            ))
+            self.image_panels[i].grid(row=0, column=i, rowspan=2, padx=5, pady=5)
+        self.image_storage.pack(side='top', padx=[self.fr_ctrl.winfo_width(), 0])
+    
+    def display(self, images: list):        
+        w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+        w = int(w / 2)
+        h = int(h / 2)
+        w -= self.fr_ctrl.winfo_width()
+        
+        self.display_imgs = []
+        self.image_panels = []
+        
+        self.image_storage.rowconfigure(0, weight=1)
+        self.image_storage.rowconfigure(1, weight=1)
+        self.image_storage.columnconfigure(0, weight=1)
+        self.image_storage.columnconfigure(1, weight=1)
+        
+        for i, img in enumerate(images):
+            img = Image.fromarray((img * 255).astype('uint8'))
+            if img.size[0] < img.size[1]:
+                img = img.resize((w,  int(w / img.size[1] * img.size[0])))
+            else: 
+                img = img.resize((int(h / img.size[0] * img.size[1]), h))
+            self.display_imgs.append(ImageTk.PhotoImage(img))
+            self.image_panels.append(tk.Label(
+                self.image_storage, 
+                image=self.display_imgs[i], 
+                bg='white', 
+            ))
+            # self.image_panels[i].bind(
+            #     '<Enter>', 
+            #     lambda x, k = i: self.image_panels[k].configure(highlightbackground='green')
+            # )
+            # self.image_panels[i].bind(
+            #     '<Leave>', 
+            #     lambda x, k = i: self.image_panels[k].configure(highlightbackground='white')
+            # )
+            self.image_panels[i].bind(
+                '<ButtonPress>', 
+                lambda x, k = i: self.select_image(k)
+            )
+            # self.image_panels[i].bind(
+            #     '<ButtonRelease>', 
+            #     lambda x, k = i: self.image_panels[k].configure(relief=None, highlightbackground='green')
+            # )            
+            if i == 2:
+                self.image_panels[i].grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+            else:
+                self.image_panels[i].grid(row=0, column=i, padx=5, pady=5)
+                
+        self.image_storage.pack(side='top', padx=[self.fr_ctrl.winfo_width(), 0])
