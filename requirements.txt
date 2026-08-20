@@ -1,9 +1,12 @@
-tensorflow
-mediapipe
-opencv-python
+tensorflow==2.16.2
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
 speechrecognition
 pillow
-numpy
+numpy<2
+ml_dtypes==0.3.2
+jax==0.4.30
+jaxlib==0.4.30
 matplotlib
 requests
 tk
