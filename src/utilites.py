@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 from time import time as tt
 import numpy as np
 import cv2
+import requests
 
 from interface import App
 
@@ -62,6 +63,23 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 
 def map_coords(x, in_min, in_max, out_min, out_max):
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+
+def translate_text(text, src='ru', dest='en'):
+  response = requests.get(
+    'https://translate.googleapis.com/translate_a/single',
+    params={
+      'client': 'gtx',
+      'sl': src,
+      'tl': dest,
+      'dt': 't',
+      'q': text,
+    },
+    timeout=10,
+  )
+  response.raise_for_status()
+  data = response.json()
+  return ''.join(chunk[0] for chunk in data[0])
 
 def dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5

@@ -1,11 +1,11 @@
 tensorflow
 mediapipe
 opencv-python
-googletrans==3.1.0a0
 speechrecognition
 pillow
 numpy
 matplotlib
+requests
 tk
 webcolors
 scikit-image

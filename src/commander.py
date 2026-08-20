@@ -11,7 +11,7 @@ from multiprocessing import Process, Queue, Value, set_start_method
 
 import matplotlib.pyplot as plt
 
-from utilites import map_coords
+from utilites import map_coords, translate_text
 
 from gesture_recognizer import GestureRecognizer
 from generator import Generator
@@ -19,7 +19,6 @@ from interface import App
 from string import punctuation
 
 import speech_recognition as sr
-from googletrans import Translator
 
 
 pg.FAILSAFE = False
@@ -102,7 +101,6 @@ class Commander:
         
     def listen(self):
         recognizer = sr.Recognizer()
-        translator = Translator()
         while not self.flag_recognition_result.value:
             self.flag_recognition_result.value = 0
             self.flag_recognition.value = 0
@@ -119,7 +117,7 @@ class Commander:
                 self.move_while(lambda: time() - tm <= 2)
                 continue
             self.commands_queue.put(('print_text', ('Идет перевод...', )))
-            text_en = translator.translate(text, src='ru', dest='en').text
+            text_en = translate_text(text, src='ru', dest='en')
             # text, text_en = 'ананас', 'pineapple'
             print(text_en)
             self.commands_queue.put(('print_text', (f'Вы сказали: {text}?', )))
@@ -271,7 +269,7 @@ if __name__ == '__main__':
     commands_queue = Queue(-1)
     chat_queue = Queue(-1)
     
-    api_url = 'https://tlzn6qzm-5000.euw.devtunnels.ms/generator'
+    api_url = 'http://127.0.0.1:5000/generator'
     
     gesture_recognizer = GestureRecognizer(frames_queue, recognitions_queue)
     app = App()
