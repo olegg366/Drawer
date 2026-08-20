@@ -19,7 +19,7 @@ array_base64 = base64.b64encode(buffer.read()).decode('utf-8')
 
 # Отправляем массив на сервер
 response = requests.post(
-    'https://tlzn6qzm-5000.euw.devtunnels.ms/generator',
+    'http://192.168.0.110:5000/generator',
     json={
         'image': array_base64,
         'prompt': 'monkey',

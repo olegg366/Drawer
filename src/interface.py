@@ -1,5 +1,6 @@
+import sys
+import subprocess
 import tkinter as tk
-from tkinter.filedialog import askdirectory
 import tkinter.font as tkfont
 from tkinter.ttk import Progressbar, Style
 from PIL import ImageTk, Image, ImageDraw
@@ -9,6 +10,8 @@ from skimage.transform import resize
 import cv2
 import numpy as np
 from multiprocessing import Queue, Value
+from pathlib import Path
+from queue import Empty
 
 imgh = 240
 imgw = 320
@@ -195,6 +198,7 @@ class App():
         self.points_image_panel.pack(side='top', fill='both', pady=self.pad, padx=5)
         
         self.camera_image = None
+        self.dir_process = None
         
         self.status_drawing = RoundedFrame(
             master=self.fr_ctrl,
@@ -357,6 +361,9 @@ class App():
             
     def set_closing_callback(self, callback):
         def on_close():
+            if self.dir_process is not None:
+                self.dir_process.terminate()
+                self.dir_process = None
             callback()
             self.root.destroy()
         self.root.createcommand("tk::mac::Quit" , on_close)
@@ -449,8 +456,36 @@ class App():
         self.line_id = None
         
     def ask_directory(self):
-        dir = askdirectory(initialdir='generated')
-        self.chat_queue.put(dir)
+        if self.dir_process is not None: return
+
+        script = Path(__file__).resolve().with_name('directory_picker.py')
+        initialdir = Path(__file__).resolve().parent.parent / 'generated'
+
+        self.dir_process = subprocess.Popen(
+            [sys.executable, str(script), str(initialdir)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        self.root.after(50, self.check_directory)
+
+    def check_directory(self):
+        if self.dir_process is None: return
+
+        if self.dir_process.poll() is None:
+            self.root.after(50, self.check_directory)
+            return
+
+        dir, error = self.dir_process.communicate()
+        returncode = self.dir_process.returncode
+        self.dir_process = None
+
+        if returncode != 0:
+            print(f'Не удалось открыть выбор директории: {error.strip()}')
+            self.chat_queue.put('')
+            return
+
+        self.chat_queue.put(dir.strip())
 
     def delete(self):
         self.end_line()
@@ -467,28 +502,49 @@ class App():
         self.chat_queue.put(self.image)
         self.image.save('src/images/scribble.png')
 
-    def update(self):
-        if not self.frames_queue.empty():
-            image = self.frames_queue.get()
+    def update_camera(self):
+        image = None
+
+        try:
+            while True:
+                image = self.frames_queue.get_nowait()
+        except Empty:
+            pass
+
+        if image is not None:
             image = Image.fromarray(image.astype('uint8')).resize((320, image.shape[0] * 320 // image.shape[1]))
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             image = add_corners(image, 35)
             self.points_image = ImageTk.PhotoImage(image)
             self.points_image_panel.configure(image=self.points_image)
-        
+
+        if self.running:
+            self.root.after(16, self.update_camera)
+
+    def update_window_state(self):
         self.canvas_w.value = self.canvas.winfo_width()
         self.canvas_h.value = self.canvas.winfo_height()
-        
+
         self.shiftx.value = self.root.winfo_x()
         self.shifty.value = self.root.winfo_y()
-        
-        while not self.commands_queue.empty():
-            f, args = self.commands_queue.get()
-            func = getattr(self, f)
-            # print(args)
-            if args is None: func()
-            else: func(*args)
-        self.root.update()
+
+        if self.running:
+            self.root.after(50, self.update_window_state)
+
+    def process_commands(self):
+        try:
+            while True:
+                f, args = self.commands_queue.get_nowait()
+                func = getattr(self, f)
+                if args is None:
+                    func()
+                else:
+                    func(*args)
+        except Empty:
+            pass
+
+        if self.running:
+            self.root.after(16, self.process_commands)
                 
     def mainloop(
         self, 
@@ -513,8 +569,10 @@ class App():
         self.flag_answer = flag_recognition_result
         
         self.running = True
-        while self.running:
-            self.update()
+        self.update_camera()
+        self.update_window_state()
+        self.process_commands()
+        self.root.mainloop()
                 
     def print_text(self, text):
         self.status_drawing.change_text(text)
